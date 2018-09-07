@@ -1,0 +1,76 @@
+源端：
+表空间创建：
+drop tablespace TS_MV_TEST including contents and datafiles;
+CREATE TABLESPACE "TS_MV_TEST" LOGGING DATAFILE '/orasvr/whbkdb/ts_mv_test/TS_MV_TEST01.dbf ' SIZE 512M AUTOEXTEND ON NEXT  128M MAXSIZE UNLIMITED EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT  AUTO;
+
+创建用户：
+drop user user_mv cascade;
+CREATE USER USER_MV
+IDENTIFIED BY USER_MV
+DEFAULT TABLESPACE TS_MV_TEST
+PROFILE DEFAULT
+ACCOUNT UNLOCK;
+GRANT CONNECT TO USER_MV;
+GRANT RESOURCE TO USER_MV;
+GRANT CREATE DATABASE LINK TO USER_MV;
+GRANT CREATE MATERIALIZED VIEW TO USER_MV;
+ALTER USER USER_MV QUOTA UNLIMITED ON TS_MV_TEST;
+
+创建表：
+drop table t1 purge;
+create table tt(id int,name varchar2(30));
+
+新建索引和约束
+drop index pk_tt;
+create unique index PK_tt on tt (id) tablespace TS_MV_TEST;
+alter table tt drop constraint pk_tt;
+ALTER TABLE tt ADD (
+  CONSTRAINT PK_tt
+  PRIMARY KEY
+  (ID)
+  USING INDEX PK_tt
+  ENABLE VALIDATE);
+  
+  
+创建物化视图日志：
+drop MATERIALIZED VIEW LOG ON tt;
+CREATE MATERIALIZED VIEW LOG ON tt with primary key;
+
+授予只读权限
+grant select on user_mv.t1 to mon;
+grant select on user_mv.MLOG$_archtranslog to mon;
+
+
+
+目标端：
+表空间创建：
+drop tablespace TS_BK including contents and datafiles;
+CREATE TABLESPACE "TS_BK" LOGGING DATAFILE '/orasvr/whbkdb/ts_bk/TS_BK01.dbf ' SIZE 512M AUTOEXTEND ON NEXT  128M MAXSIZE UNLIMITED EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT  AUTO;
+
+创建用户：
+drop user USER_BK cascade;
+CREATE USER USER_BK
+IDENTIFIED BY USER_BK
+DEFAULT TABLESPACE TS_BK
+PROFILE DEFAULT
+ACCOUNT UNLOCK;
+GRANT CONNECT TO USER_BK;
+GRANT RESOURCE TO USER_BK;
+GRANT CREATE DATABASE LINK TO USER_BK;
+GRANT CREATE MATERIALIZED VIEW TO USER_BK;
+ALTER USER USER_BK QUOTA UNLIMITED ON TS_BK;
+
+创建dblink：
+drop database link mv;
+create database link mv connect to user_mv identified by user_mv using '(DESCRIPTION = (ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST = 172.27.9.55 )(PORT = 1521)) ) (CONNECT_DATA = (SERVICE_NAME = whbkdb) ) )';
+
+创建物化视图：
+drop MATERIALIZED VIEW mv_bk;
+CREATE MATERIALIZED VIEW mv_bk
+BUILD IMMEDIATE
+REFRESH FORCE
+ON DEMAND
+next sysdate+1/2880
+with primary key
+AS
+SELECT * from user_mv.tt@mv;
